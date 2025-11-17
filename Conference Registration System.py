@@ -978,6 +978,12 @@ def main():
         
         elif choice == "8":
             print("\n✓ Exiting system...")
+             # Clean up wallet files
+            if os.path.exists("wallets"):
+                for file in os.listdir("wallets"):
+                    if file.endswith(".pem"):
+                        os.remove(os.path.join("wallets", file))
+                print("✓ Cleaned up wallet files.")
             break
         
         else:
