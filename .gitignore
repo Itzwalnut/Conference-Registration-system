@@ -1,5 +1,5 @@
 # Virtual environment
-.venv/
+# .venv/  # Uncommented to allow tracking
 venv/
 env/
 
