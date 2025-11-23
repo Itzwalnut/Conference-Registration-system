@@ -374,24 +374,58 @@ class Blockchain:
     def get_latest_block(self):
         """获取最新的区块"""
         return self.chain[-1]
+
+    def calculate_cumulative_difficulty(self, chain=None):
+        """Calculate cumulative difficulty of a blockchain"""
+        if chain is None:
+            chain = self.chain
+        # Sum difficulties of all blocks in the chain
+        total = 0
+        for block in chain:
+            total += getattr(block, 'difficulty', 0)
+        return total
     
-    def add_block(self, new_block):
-        """添加新区块到区块链"""
-        # Only set the previous hash if it hasn't been set yet
-        if not new_block.previous_hash:
-            new_block.previous_hash = self.get_latest_block().hash
-            # For POWBlock, we need to mine again after setting previous_hash
-            if isinstance(new_block, POWBlock):
-                new_block.hash = new_block.mine_block()
-            else:
-                new_block.hash = new_block.calculate_hash()
-        self.chain.append(new_block)
-    
-    def is_chain_valid(self):
-        """验证区块链的完整性"""
-        for i in range(1, len(self.chain)):
-            current_block = self.chain[i]
-            previous_block = self.chain[i-1]
+    def replace_chain(self, new_chain):
+        """
+        Replace chain with a new chain only if:
+        1. New chain is longer or equal in length AND
+        2. New chain has higher cumulative difficulty
+        AND the chain is valid.
+        """
+        if len(new_chain) < len(self.chain):
+            print("Rejected new chain: shorter length")
+            return False
+        
+        current_cum_diff = self.calculate_cumulative_difficulty(self.chain)
+        new_cum_diff = self.calculate_cumulative_difficulty(new_chain)
+        
+        if new_cum_diff < current_cum_diff:
+            print("Rejected new chain: lower cumulative difficulty")
+            return False
+        
+        # Validate new chain before replacement
+        if not self.is_valid_chain(new_chain):
+            print("Rejected new chain: chain invalid")
+            return False
+
+        self.chain = new_chain
+        print("Chain replaced with new chain based on fork handling with difficulty")
+        return True
+
+    def is_valid_chain(self, chain):
+        """Validate given blockchain"""
+        if not chain or len(chain) == 0:
+            return False
+        
+        # Validate genesis block
+        genesis = self.create_genesis_block()
+        if chain[0].hash != genesis.hash:
+            print("Genesis block mismatch")
+            return False
+        
+        for i in range(1, len(chain)):
+            current_block = chain[i]
+            previous_block = chain[i-1]
             
             # 检查当前区块的哈希是否正确
             if current_block.hash != current_block.calculate_hash():
@@ -404,6 +438,18 @@ class Blockchain:
                 return False
         
         return True
+
+    def add_block(self, new_block):
+        """添加新区块到区块链"""
+        # Only set the previous hash if it hasn't been set yet
+        if not new_block.previous_hash:
+            new_block.previous_hash = self.get_latest_block().hash
+            # For POWBlock, we need to mine again after setting previous_hash
+            if isinstance(new_block, POWBlock):
+                new_block.hash = new_block.mine_block()
+            else:
+                new_block.hash = new_block.calculate_hash()
+        self.chain.append(new_block)
     
     def display_chain(self):
         """显示整个区块链"""
@@ -754,7 +800,59 @@ def main():
     # Create registration system
     registration_system = AttendeeRegistration(blockchain)
     registered_attendees = {}
-    
+
+    def simulate_fork_handling():
+        print("\n--- SIMULATE FORK HANDLING ---")
+        # Create a base chain by mining one block from current chain
+        if len(blockchain.chain) < 1:
+            print("Blockchain is empty, cannot simulate fork")
+            return
+        
+        import copy
+        base_chain = copy.deepcopy(blockchain.chain)
+        latest_block = blockchain.get_latest_block()
+
+        # Create two competing blocks at the same index to simulate a fork
+        block_index = len(base_chain)
+        previous_hash = latest_block.hash
+
+        # Create two different blocks to form competing forks
+        block_data_1 = {"info": "Fork block 1"}
+        block_data_2 = {"info": "Fork block 2, different data"}
+
+        fork_block_1 = POWBlock(
+            index=block_index,
+            timestamp=time.time(),
+            data=block_data_1,
+            previous_hash=previous_hash,
+            difficulty=blockchain.difficulty
+        )
+
+        fork_block_2 = POWBlock(
+            index=block_index,
+            timestamp=time.time(),
+            data=block_data_2,
+            previous_hash=previous_hash,
+            difficulty=blockchain.difficulty
+        )
+
+        # Create two competing forks (chains)
+        fork_chain_1 = base_chain + [fork_block_1]
+        fork_chain_2 = base_chain + [fork_block_2]
+
+        # Initially set the blockchain to fork_chain_1
+        blockchain.replace_chain(fork_chain_1)
+        print("Blockchain set to fork_chain_1")
+
+        # Now attempt to replace with fork_chain_2 - simulate fork resolution
+        print("Attempting to replace blockchain with fork_chain_2:")
+        replaced = blockchain.replace_chain(fork_chain_2)
+
+        if replaced:
+            print("Fork resolved: blockchain replaced with fork_chain_2")
+        else:
+            print("Fork not replaced: fork_chain_2 rejected")
+
     while True:
         print("\n" + "="*60)
         print("MAIN MENU")
@@ -766,37 +864,38 @@ def main():
         print("5. Verify specific attendee")
         print("6. View blockchain")
         print("7. Organizer queries (sessions, attendees, registration status)")
-        print("8. Exit")
+        print("8. Simulate fork handling")
+        print("9. Exit")
         print("="*60)
-        
-        choice = input("\nEnter your choice (1-8): ").strip()
-        
+
+        choice = input("\nEnter your choice (1-9): ").strip()
+
         if choice == "1":
             print("\n--- ATTENDEE REGISTRATION ---")
             name = input("Enter attendee name: ").strip()
             if not name:
                 print("✗ Name cannot be empty!")
                 continue
-            
+
             conference_id = input("Enter conference ID (default: TECHCONF2024): ").strip()
             if not conference_id:
                 conference_id = "TECHCONF2024"
-            
+
             password = input("Enter wallet password (for securing private key): ").strip()
             if not password:
                 password = None
-            
+
             # Register attendee
             attendee = registration_system.register_attendee(
                 name=name,
                 conference_id=conference_id,
                 password=password
             )
-            
+
             if attendee:
                 registered_attendees[attendee['attendee_id']] = attendee
                 print(f"✓ Registration successful!")
-        
+
         elif choice == "2":
             print("\n--- REGISTERED ATTENDEES ---")
             if not registered_attendees:
@@ -809,7 +908,7 @@ def main():
                     print(f"  Conference: {att_data['conference_id']}")
                     print(f"  Status: Registered on blockchain")
                     print()
-        
+
         elif choice == "3":
             print("\n--- RECORD SESSION ATTENDANCE ---")
             if not registered_attendees:
@@ -843,7 +942,7 @@ def main():
                     print("✗ Invalid selection")
             except ValueError:
                 print("✗ Invalid input")
-        
+
         elif choice == "4":
             print("\n--- MINE VALID BLOCKS ---")
             if not blockchain.pending_transactions:
@@ -855,38 +954,38 @@ def main():
                 miner_address = "Miner1"
 
             valid_count, mined_block = blockchain.mine_valid_blocks(miner_address, registration_system)
-            
+
             if mined_block:
                 print(f"\n✓ Successfully mined block with {valid_count} valid transactions")
                 print(f"  Block Index: {mined_block.index}")
                 print(f"  Block Hash: {mined_block.hash[:16]}...")
             else:
                 print(f"\n✗ No valid transactions to include in block")
-        
+
         elif choice == "5":
             print("\n--- VERIFY ATTENDEE ---")
             if not registered_attendees:
                 print("No attendees registered yet.")
                 continue
-            
+
             print("\nRegistered attendees:")
             attendee_ids = list(registered_attendees.keys())
             for i, att_id in enumerate(attendee_ids, 1):
                 print(f"  {i}. {registered_attendees[att_id]['name']} ({att_id})")
-            
+
             try:
                 choice_idx = int(input("\nSelect attendee number: ")) - 1
                 if 0 <= choice_idx < len(attendee_ids):
                     att_id = attendee_ids[choice_idx]
                     attendee = registered_attendees[att_id]
-                    
+
                     print(f"\n--- Verification for {attendee['name']} ---")
                     print(f"Attendee ID: {attendee['attendee_id']}")
                     print(f"Name: {attendee['name']}")
                     print(f"Conference: {attendee['conference_id']}")
                     print(f"Wallet: {attendee['wallet'].private_key_file}")
                     print(f"Blockchain Hash: {attendee['blockchain_hash'][:16]}...")
-                    
+
                     # Try to load private key
                     pwd = input("Enter wallet password to verify private key: ").strip()
                     loaded_key = attendee['wallet'].load_private_key(password=pwd if pwd else None)
@@ -898,11 +997,11 @@ def main():
                     print("✗ Invalid selection")
             except ValueError:
                 print("✗ Invalid input")
-        
+
         elif choice == "6":
             print("\n--- BLOCKCHAIN VIEW ---")
             blockchain.display_chain()
-        
+
         elif choice == "7":
             print("\n" + "="*60)
             print("ORGANIZER QUERIES")
@@ -912,15 +1011,15 @@ def main():
             print("3. Query registration status of an attendee")
             print("4. Back to main menu")
             print("="*60)
-            
+
             query_choice = input("\nEnter your choice (1-4): ").strip()
-            
+
             if query_choice == "1":
                 attendee_id = input("Enter attendee ID: ").strip()
                 if not attendee_id:
                     print("✗ Attendee ID cannot be empty")
                     continue
-                
+
                 sessions = blockchain.query_sessions_by_attendee(attendee_id)
                 if sessions:
                     print(f"\n--- Sessions attended by {attendee_id} ---")
@@ -932,13 +1031,13 @@ def main():
                         print(f"   Transaction ID: {session_info['transaction_id']}\n")
                 else:
                     print(f"✗ No session attendance records found for attendee {attendee_id}")
-            
+
             elif query_choice == "2":
                 session_id = input("Enter session ID: ").strip()
                 if not session_id:
                     print("✗ Session ID cannot be empty")
                     continue
-                
+
                 attendees = blockchain.query_attendees_by_session(session_id)
                 if attendees:
                     print(f"\n--- Attendees in session {session_id} ---")
@@ -950,13 +1049,13 @@ def main():
                         print(f"   Transaction ID: {attendee_info['transaction_id']}\n")
                 else:
                     print(f"✗ No attendance records found for session {session_id}")
-            
+
             elif query_choice == "3":
                 attendee_id = input("Enter attendee ID: ").strip()
                 if not attendee_id:
                     print("✗ Attendee ID cannot be empty")
                     continue
-                
+
                 reg_info = blockchain.query_attendee_registration_status(attendee_id)
                 if reg_info:
                     print(f"\n--- Registration Status for {attendee_id} ---")
@@ -969,14 +1068,17 @@ def main():
                     print(f"Public Key Hash: {reg_info['public_key_hash']}")
                 else:
                     print(f"✗ No registration record found for attendee {attendee_id}")
-            
+
             elif query_choice == "4":
                 pass  # Return to main menu
-            
+
             else:
                 print("✗ Invalid choice")
-        
+
         elif choice == "8":
+            simulate_fork_handling()
+
+        elif choice == "9":
             print("\n✓ Exiting system...")
              # Clean up wallet files
             if os.path.exists("wallets"):
@@ -985,9 +1087,9 @@ def main():
                         os.remove(os.path.join("wallets", file))
                 print("✓ Cleaned up wallet files.")
             break
-        
+
         else:
-            print("✗ Invalid choice! Please enter 1-8")
+            print("✗ Invalid choice! Please enter 1-9")
 
 if __name__ == "__main__":
     main()
