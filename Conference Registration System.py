@@ -192,6 +192,7 @@ class AttendeeRegistration:
             "attendee_id": attendee_id,
             "name": name,
             "conference_id": conference_id,
+            "bitcoin_amount": 0,
             "wallet": self.wallet,
             "public_key": public_key,
             "private_key": private_key,
@@ -618,7 +619,12 @@ class TransactionBlockchain(Blockchain):
         
         self.chain.append(new_block)
         print(f"Block mined! Miner {miner_address} receives {self.mining_reward} coins reward")
-        
+
+        # Update attendee's bitcoin amount if they are registered
+        if miner_address in registered_attendees:
+            registered_attendees[miner_address]['bitcoin_amount'] += self.mining_reward
+            print(f"✓ Updated {miner_address}'s bitcoin amount to {registered_attendees[miner_address]['bitcoin_amount']}")
+
         # 清空待处理交易
         self.pending_transactions = []
         
@@ -634,14 +640,14 @@ class TransactionBlockchain(Blockchain):
             else:
                 print(f"Maintaining current difficulty: {self.difficulty}")
 
-    def mine_valid_blocks(self, miner_address, registration_system):
+    def mine_valid_blocks(self, miner_address, registration_system, registered_attendees):
         """
         Mine a block with signature verification:
         - Verify digital signatures on all pending attendance records
         - Only include transactions with valid signatures in the new block
-        - Miners receive rewards for mining valid blocks
         - Return (valid_tx_count, block) if successful, (0, None) if no valid transactions
         """
+
         if not self.pending_transactions:
             print("No pending transactions to mine!")
             return 0, None
@@ -697,11 +703,16 @@ class TransactionBlockchain(Blockchain):
             amount=self.mining_reward
         )
 
+        # Update attendee's bitcoin amount if they are registered
+        if miner_address in registered_attendees:
+            registered_attendees[miner_address]['bitcoin_amount'] += self.mining_reward
+
         # Add block to chain
         self.chain.append(new_block)
         print(f"✓ Block #{new_block.index} added to blockchain")
         print(f"✓ Miner {miner_address} receives {self.mining_reward} coins as reward")
         print(f"✓ Block Hash: {new_block.hash[:16]}...")
+
 
         # Update pending pool with only invalid transactions
         self.pending_transactions = invalid_transactions
@@ -780,6 +791,7 @@ class TransactionBlockchain(Blockchain):
                         'attendee_id': attendee_id,
                         'name': block.data.get('name'),
                         'conference_id': block.data.get('conference_id'),
+                        'bitcoin_amount': block.data.get('bitcoin_amount', 0),
                         'registration_time': block.data.get('registration_time'),
                         'status': block.data.get('status'),
                         'block_index': block.index,
@@ -906,6 +918,7 @@ def main():
                     print(f"  ID: {att_id}")
                     print(f"  Name: {att_data['name']}")
                     print(f"  Conference: {att_data['conference_id']}")
+                    print(f"  Bitcoin Amount: {att_data['bitcoin_amount']}")
                     print(f"  Status: Registered on blockchain")
                     print()
 
@@ -949,11 +962,12 @@ def main():
                 print("No pending transactions to mine!")
                 continue
 
-            miner_address = input("Enter miner address/name: ").strip()
-            if not miner_address:
-                miner_address = "Miner1"
+            miner_address = input("Enter attendee ID to mine blocks: ").strip()
+            if not miner_address or miner_address not in registered_attendees:
+                print("✗ Invalid or unregistered attendee ID!")
+                continue
 
-            valid_count, mined_block = blockchain.mine_valid_blocks(miner_address, registration_system)
+            valid_count, mined_block = blockchain.mine_valid_blocks(miner_address, registration_system, registered_attendees)
 
             if mined_block:
                 print(f"\n✓ Successfully mined block with {valid_count} valid transactions")
@@ -1061,6 +1075,7 @@ def main():
                     print(f"\n--- Registration Status for {attendee_id} ---")
                     print(f"Name: {reg_info['name']}")
                     print(f"Conference: {reg_info['conference_id']}")
+                    print(f"Bitcoin Amount: {reg_info['bitcoin_amount']}")
                     print(f"Status: {reg_info['status']}")
                     print(f"Registration Time: {reg_info['registration_time']}")
                     print(f"Block Index: {reg_info['block_index']}")
